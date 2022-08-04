@@ -1,0 +1,24 @@
+{
+  "name": "tanachyomi",
+  "version": "1.0.1",
+  "description": "send podcast every day",
+  "main": "TanachYomiBot.js",
+  "scripts": {
+    "start": "node TanachYomiBot.js",
+    "test": "node TanachYomiBot.js test"
+  },
+  "author": "Shilo Babila",
+  "license": "ISC",
+  "dependencies": {
+    "whatsapp-web.js": "^1.17.1",
+    "hebcal": "^2.3.2",
+    "node-telegram-bot-api":"^0.58.0",
+    "qrcode-terminal": "^0.12.0",
+    "qrcode":"^1.5.1",
+    "soundcloud-scraper":"^5.0.3",
+    "node-id3": "^0.2.3",
+    "p-queue": "6.6.2",
+    "dotenv":"^16.0.1",
+    "pm2":"^5.2.0"
+  }
+}
