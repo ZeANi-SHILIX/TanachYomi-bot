@@ -682,18 +682,18 @@ whatsapp_bot.on('message', async msg => {
     }
 
     else if (msg.body === '!info' || msg.body.includes('מידע')) {
-        let str = `בכל ערב לאחר תפילת ערבית, התקיים בישיבת הגולן שיעור קצר על פרק בתנ"ך מאת הרב מוטי פרנקו.` + 
-        `\nהשיעור, בן כעשר דקות, כולל קריאה של הפרק בתוספת ביאור, הערות והרחבות.` + 
-        `\nלאחר שסיים הרב להעביר שיעורים על כל התנ"ך, התחלנו סבב חדש! 🙂` +
-        `\nמומלץ לעקוב עם תנ"ך פתוח.` +
-        `\n\nלקבלת השיעורים דרך הפלטפורמות השונות, ניתן להשתמש בקישור הבא:` + 
-        `\nhttps://celestial-laugh-8202.glideapp.io/` +
-        `\n` +
-        `\nעל מנת לקבל כל פרק בכל זמן, שלחו הודעה כמו בדוגמה הבאה: חפש שופטים פרק טו` +
-        `\nלמספר http://wa.me/972507932232` +
-        `\n\nלמעוניינים, הבוט זמין גם בטלגרם https://t.me/TanachYomi_bot` +
-        `\nובערוץ https://t.me/Tanach_Yomi` +
-        `\n\nהשיעורים מוקדשים לע"נ תלמיד הישיבה ינון ירון בן אברהם ז"ל.`;
+        let str = `בכל ערב לאחר תפילת ערבית, התקיים בישיבת הגולן שיעור קצר על פרק בתנ"ך מאת הרב מוטי פרנקו.` +
+            `\nהשיעור, בן כעשר דקות, כולל קריאה של הפרק בתוספת ביאור, הערות והרחבות.` +
+            `\nלאחר שסיים הרב להעביר שיעורים על כל התנ"ך, התחלנו סבב חדש! 🙂` +
+            `\nמומלץ לעקוב עם תנ"ך פתוח.` +
+            `\n\nלקבלת השיעורים דרך הפלטפורמות השונות, ניתן להשתמש בקישור הבא:` +
+            `\nhttps://celestial-laugh-8202.glideapp.io/` +
+            `\n` +
+            `\nעל מנת לקבל כל פרק בכל זמן, שלחו הודעה כמו בדוגמה הבאה: חפש שופטים פרק טו` +
+            `\nלמספר http://wa.me/972507932232` +
+            `\n\nלמעוניינים, הבוט זמין גם בטלגרם https://t.me/TanachYomi_bot` +
+            `\nובערוץ https://t.me/Tanach_Yomi` +
+            `\n\nהשיעורים מוקדשים לע"נ תלמיד הישיבה ינון ירון בן אברהם ז"ל.`;
         whatsapp_bot.sendMessage(msg.from, str);
     }
 
@@ -1432,11 +1432,11 @@ async function sendTheFile(episode, arg = { isSearch: false, contactID: myID, so
             logToFile(`ERROR! the link not working\n${link}\n${err}`);
         });
 
-    if (episode.path != null) {
-        if (fs.existsSync(episode.path)) {
-            sendFromPath(episode, arg, episode.name);
-            return;
-        }
+    if (episode.path != null && fs.existsSync(episode.path)) {
+        return sendFromPath(episode, arg, episode.name);
+    }
+    if (arg.isSearch && arg.source === "Telegram" && episode.file_id != undefined) {
+        return sendFromPath(episode, arg, episode.name);
     }
 
 
@@ -1516,16 +1516,22 @@ function sendSearchedFile(arg, episode) {
     else if (arg.source === "Telegram") {
         logToFile("@Telegram: Start sending the file " + episode.name + "...");
 
+        let file = episode.path;
+        if (episode?.file_id != undefined) {
+            file = episode.file_id;
+            logToFile("send from File ID");
+        }
+
         let kb = makeKeyboard(episode);
-        queue.add(() => telegram_bot.sendAudio(arg.contactID, episode.path,
+        queue.add(() => telegram_bot.sendAudio(arg.contactID, file,
             {
                 caption: episode.name,
                 title: episode.name,
                 reply_markup: {
                     inline_keyboard: kb
                 }
-            }), { priority: 1 })
-            .then(() => {
+            })
+            .then(msg => {
                 let endTime = new Date();
                 let startTime = endTime;
                 if (timeStamp.has(arg.contactID)) {
@@ -1534,12 +1540,16 @@ function sendSearchedFile(arg, episode) {
                 }
                 let timeDiff = (endTime - startTime) / 1000;
                 logToFile("@Telegram: The file " + episode.name + " has sended to " + arg.contactID + ", Time: " + timeDiff + "\n---------");
+                episode.file_id = msg.audio?.file_id;
+                //console.log(episode.file_id)
+
+                write_BIBLE_EPISODES()
             })
             .catch(() => {
                 //console.log("@Telegram: cant send to telegram " + episode.name)
                 logToFile("@Telegram: cant send " + episode.name + " to " + arg.contactID)
                 console.error
-            })
+            }), { priority: 1 })
 
         // delete 'wait...' msg - [NOT WORKING]
         // for (let msgPromise of messaagesToDelete) {
@@ -1646,7 +1656,7 @@ async function sendMessageWA(GRobj, soundFile, title) {
 }
 
 /**
- * @param {{name:String,path:String,...}} episode 
+ * @param {{name:String,path:String,file_id?:string...}} episode 
  * @param {{name:String,id:String}} chat 
  * @returns 
  */
@@ -1654,14 +1664,25 @@ async function sendAudioTelegram(chat, episode, title) {
     let kb = makeKeyboard(episode);
     logToFile("@Telegram: start to send " + title + " to " + chat.name);
 
+    let file = episode.path;
+    if (episode?.file_id != undefined) {
+        file = episode.file_id;
+        logToFile("send from File ID");
+    }
 
-    return await telegram_bot.sendAudio(chat.id, episode.path, {
+    return await telegram_bot.sendAudio(chat.id, file, {
         caption: title,
         title: title,
         reply_markup: {
             inline_keyboard: kb
         }
-    }).then(logToFile("@Telegram: The file " + title + " has sended to " + chat.name))
+    })
+        .then(msg => {
+            episode.file_id = msg.audio?.file_id;
+            write_BIBLE_EPISODES();
+            logToFile("@Telegram: The file " + title + " has sended to " + chat.name);
+            return msg;
+        })
 }
 
 /**
