@@ -9,7 +9,7 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const TelegramBot = require('node-telegram-bot-api');
 const SoundCloud = require("soundcloud-scraper");
 const qrcode = require('qrcode-terminal'); // remove?
-const NodeID3Promise = require('node-id3').Promise
+const NodeID3Promise = require('node-id3').Promise;
 const { default: PQueue } = require("p-queue");
 //const { exec } = require("child_process");
 const Hebcal = require('hebcal');
@@ -206,9 +206,10 @@ async function sleepV2(ms = 0) {
 async function tanachYomi() {
     // check no double procces
     if (params.has('tanachYomiProcces')) return;
-    params.set('tanachYomiProcces', true)
 
-    while (true) {
+    params.set('tanachYomiProcces', true);
+
+    while (params.has('tanachYomiProcces')) {
         let t0 = performance.now();
         let t1 = performance.now();
 
@@ -230,9 +231,6 @@ async function tanachYomi() {
             await sleep(5 * 60 * 1000 - (t1 - t0)) // minute
         }
 
-        if (!params.has('tanachYomiProcces')) {
-            break;
-        }
     }
 }
 
@@ -252,6 +250,8 @@ whatsapp_bot.on('message', async msg => {
         isGif,
         isEphemeral,
         links,
+        id,
+        mediaKey,
         _data,
         ...newMSG } = msg;
     console.table(newMSG);
@@ -442,10 +442,33 @@ whatsapp_bot.on('message', async msg => {
         msg.reply('פונג');
     }
 
+    // ########################
+    //     Auto add to group
+    // ########################
+    else if (msg.body.includes('להיכנס לקבוצה של התנ"ך היומי')) {
+        let res = await addtogroup(msg.from);
+        if (res.ok)
+            return msg.reply("נוספת בהצלחה ל" + res.nameGroup)
+        return whatsapp_bot.sendMessage(myID, "יש להוסיף ידנית את המשתמש " + (await msg.getContact()).pushname)
+    }
+    else if (msg.hasQuotedMsg) {
+        let quoted_Message = await msg.getQuotedMessage();
+
+        if (quoted_Message.type === 'product') {
+            if (quoted_Message.title !== 'התנ"ך היומי') return;
+
+            let res = await addtogroup(msg.from);
+            if (res.ok)
+                return msg.reply("נוספת בהצלחה ל" + res.nameGroup)
+            return whatsapp_bot.sendMessage(myID, "יש להוסיף ידנית את המשתמש " + (await msg.getContact()).pushname)
+        }
+
+    }
+
     // ####################
     //     Day setting
     // ####################
-    else if (msg.body === '!add-day' || msg.body === '!הוסף-יום') {
+    if (msg.body === '!add-day' || msg.body === '!הוסף-יום') {
         let adminInfo = isADMIN(contactID);
         if (!adminInfo.isAdmin) {
             msg.reply("אינך מנהל, רק למנהלים יש גישה לפקודה זו.")
@@ -658,6 +681,21 @@ whatsapp_bot.on('message', async msg => {
         whatsapp_bot.sendMessage(msg.from, JSON.stringify(msg, null, 4));
     }
 
+    else if (msg.body === '!info' || msg.body.includes('מידע')) {
+        let str = `בכל ערב לאחר תפילת ערבית, התקיים בישיבת הגולן שיעור קצר על פרק בתנ"ך מאת הרב מוטי פרנקו.` + 
+        `\nהשיעור, בן כעשר דקות, כולל קריאה של הפרק בתוספת ביאור, הערות והרחבות.` + 
+        `\nלאחר שסיים הרב להעביר שיעורים על כל התנ"ך, התחלנו סבב חדש! 🙂` +
+        `\nמומלץ לעקוב עם תנ"ך פתוח.` +
+        `\n\nלקבלת השיעורים דרך הפלטפורמות השונות, ניתן להשתמש בקישור הבא:` + 
+        `\nhttps://celestial-laugh-8202.glideapp.io/` +
+        `\n` +
+        `\nעל מנת לקבל כל פרק בכל זמן, שלחו הודעה כמו בדוגמה הבאה: חפש שופטים פרק טו` +
+        `\nלמספר http://wa.me/972507932232` +
+        `\n\nלמעוניינים, הבוט זמין גם בטלגרם https://t.me/TanachYomi_bot` +
+        `\nובערוץ https://t.me/Tanach_Yomi` +
+        `\n\nהשיעורים מוקדשים לע"נ תלמיד הישיבה ינון ירון בן אברהם ז"ל.`;
+        whatsapp_bot.sendMessage(msg.from, str);
+    }
 
     /*#########################
              admins
@@ -776,7 +814,7 @@ whatsapp_bot.on('message', async msg => {
     // #########################
     //      send to broadcast
     // #########################
-    else if (LIST_OF_GROUP.broadcast[msg.from] !== undefined) {
+    else if (LIST_OF_GROUP.broadcast?.[msg.from] !== undefined) {
         if (params.has(msg.from)) return; // dont send on reply ###### ===>>> need check
 
         let msgtoforward = new Map();
@@ -826,7 +864,7 @@ whatsapp_bot.on('group_join', groupNoti => {
 let messaagesToDelete = [];
 
 telegram_bot.onText(/\/start/, (msg) => {
-    let str = `שלום ${msg.from?.first_name}!\nברוך הבא לבוט התנ"ך היומי.\n\n` +
+    let str = `שלום ${msg.from?.first_name || msg.contact?.first_name}!\nברוך הבא לבוט התנ"ך היומי.\n\n` +
         `אם תרצה, תוכל לקבל ממני כל יום את הפרק היומי בתנ"ך (בפרטי או בקבוצה)\n(לחץ  על כפתור הפקודות כדי לראות)\n` +
         `ובנוסף תוכל לחפש פרק ללימוד לפי בחירה, ` +
         `החיפוש מתבצע בפורמט הבא: \n` +
@@ -972,6 +1010,22 @@ telegram_bot.onText(/\/getid/, (msg) => {
     telegram_bot.sendMessage(msg.chat.id, "הID של השיחה: " + msg.chat.id);
 });
 
+telegram_bot.onText(/\/info/, (msg) => {
+    let str = `*בוט לשליחת שיעור יומי קצר של פרק תנ"ך מפי הרב מוטי פרנקו.*` +
+        `\nניתן להצטרף לערוץ הטלגרם או לקבוצות הוואטסאפ בכפתורים למטה.` +
+        `\n` +
+        `\nהבוט זמין גם [בוואטסאפ](http://wa.me/972507932232)` +
+        `\n` +
+        `\nנוצר על ידי [שילה בבילה](http://t.me/shilobabila/)`
+    telegram_bot.sendMessage(msg.chat.id, str, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "לערוץ הטלגרם", url: "https://t.me/Tanach_Yomi" }, { text: "לקבוצות בוואטסאפ", url: "https://wa.me/message/SVFQAVCHFJCFE1" }]
+            ]
+        }
+    });
+});
 
 telegram_bot.onText(/\/killbot/, (msg) => {
     let contactID = msg.contact?.user_id ?? "No Contact";
@@ -1045,6 +1099,46 @@ telegram_bot.onText(/\/warestart/, (msg) => {
                 [
                     { text: "בטל", callback_data: 'cancel' },
                     { text: "כן אני בטוח", callback_data: "warestart" }
+                ]
+            ]
+        }
+    })
+
+});
+
+telegram_bot.onText(/\/stoptanach/, (msg) => {
+    let contactID = msg.contact?.user_id ?? "No Contact";
+    let adminInfo = isADMIN(String(contactID), String(msg.chat.id));
+    if (!adminInfo.isAdmin) {
+        return telegram_bot.sendMessage(msg.chat.id, "אינך מנהל, רק למנהלים יש גישה לפקודה זו.");
+    }
+
+    telegram_bot.sendMessage(msg.chat.id, "האם אתה בטוח שברצונך לעצור את תהליך שליחת הפרק היומי?\nאם תמשיך התהליך ייעצר גם בוואטסאפ וגם בטלגרם", {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "בטל", callback_data: 'cancel' },
+                    { text: "כן אני בטוח", callback_data: "stoptanach" }
+                ]
+            ]
+        }
+    })
+
+});
+
+telegram_bot.onText(/\/starttanach/, (msg) => {
+    let contactID = msg.contact?.user_id ?? "No Contact";
+    let adminInfo = isADMIN(String(contactID), String(msg.chat.id));
+    if (!adminInfo.isAdmin) {
+        return telegram_bot.sendMessage(msg.chat.id, "אינך מנהל, רק למנהלים יש גישה לפקודה זו.");
+    }
+
+    telegram_bot.sendMessage(msg.chat.id, "האם אתה בטוח שברצונך להפעיל את תהליך שליחת הפרק היומי?", {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "בטל", callback_data: 'cancel' },
+                    { text: "כן אני בטוח", callback_data: "starttanach" }
                 ]
             ]
         }
@@ -1179,6 +1273,32 @@ telegram_bot.on("callback_query", async (msg) => {
             message_id: msg.message.message_id
         });
     }
+    else if (msg.data == 'stoptanach') {
+        if (params.has('tanachYomiProcces')) {
+            params.delete('tanachYomiProcces'); //- will stop telegram too
+            telegram_bot.editMessageText("תהליך שליחת הפרק היומי נעצר", {
+                chat_id: msg.message.chat.id,
+                message_id: msg.message.message_id
+            });
+        }
+        telegram_bot.editMessageText("תהליך שליחת הפרק היומי אינו פועל", {
+            chat_id: msg.message.chat.id,
+            message_id: msg.message.message_id
+        });
+    }
+    else if (msg.data == 'starttanach') {
+        if (params.has('tanachYomiProcces'))
+            return telegram_bot.editMessageText("תהליך שליחת הפרק היומי כבר פועל", {
+                chat_id: msg.message.chat.id,
+                message_id: msg.message.message_id
+            });
+
+        tanachYomi(); // will start telegram too
+        telegram_bot.editMessageText("תהליך שליחת הפרק היומי אותחל מחדש", {
+            chat_id: msg.message.chat.id,
+            message_id: msg.message.message_id
+        });
+    }
     else if (msg.data == 'warestart') {
         telegram_bot.editMessageText("בוט הוואטסאפ אותחל מחדש. \nשים לב שעליך לסרוק את הקוד על מנת לחבר את הבוט לחשבון הוואטסאפ.", {
             chat_id: msg.message.chat.id,
@@ -1193,14 +1313,14 @@ telegram_bot.on("callback_query", async (msg) => {
 
     // search (can't be inside 'else if')
     if (msg.data == 'miz119_cancel') {
-        await telegram_bot.editMessageText("בוטל", {
+        return telegram_bot.editMessageText("בוטל", {
             chat_id: msg.message.chat.id,
             message_id: msg.message.message_id
-        })
-        return
+        });
     }
+    let textAfterEdit;
     if (queue.size > 0 && msg.data.startsWith('miz119')) {
-        telegram_bot.sendMessage(msg.message.chat.id, "מעבד בקשות קודמות... מקומך בתור הוא " + queue.size);
+        textAfterEdit = "מעבד בקשות קודמות... מקומך בתור הוא " + queue.size
     }
 
     if (msg.data == 'miz119_1-4' || msg.data == 'miz119_all') {
@@ -1210,18 +1330,16 @@ telegram_bot.on("callback_query", async (msg) => {
             "soundcloud": "https://soundcloud.com/ygolan/zrerkyce5h9g",
             "spotify": "https://open.spotify.com/episode/1M23OgVKbz08RceLiP5tVS?si=V9JRau3eTI6eDopzSnfvLQ"
         }, { isSearch: true, contactID: msg.message.chat.id, source: "Telegram" }));
+        if (textAfterEdit == undefined) textAfterEdit = 'אנא המתן...';
     }
     if (msg.data == 'miz119_5-9' || msg.data == 'miz119_all') {
-        // telegram_bot.editMessageText("המתן...", {
-        //     chat_id: msg.message.chat.id,
-        //     message_id: msg.message.message_id
-        // })
         queue.add(() => sendTheFile({
             "name": "תהילים מזמור קיט אותיות ה - ט",
             "chapter": "מזמור קיט",
             "soundcloud": "https://soundcloud.com/ygolan/qw0pzxw5l57f",
             "spotify": "https://open.spotify.com/episode/7lakZPDp8UVTcdXVH5YFPV?si=BqZMfK04QqizUpDBGSIKXw"
         }, { isSearch: true, contactID: msg.message.chat.id, source: "Telegram" }));
+        if (textAfterEdit == undefined) textAfterEdit = 'אנא המתן...';
     }
     if (msg.data == 'miz119_10-50' || msg.data == 'miz119_all') {
         queue.add(() => sendTheFile({
@@ -1230,6 +1348,7 @@ telegram_bot.on("callback_query", async (msg) => {
             "soundcloud": "https://soundcloud.com/ygolan/stdzu2iecycw",
             "spotify": "https://open.spotify.com/episode/5SLi3j1BpyDEUG9QSr305d?si=dRUpYYX2SM2YypsnCK_s-g"
         }, { isSearch: true, contactID: msg.message.chat.id, source: "Telegram" }));
+        if (textAfterEdit == undefined) textAfterEdit = 'אנא המתן...';
     }
     if (msg.data == 'miz119_60-90' || msg.data == 'miz119_all') {
         queue.add(() => sendTheFile({
@@ -1238,6 +1357,7 @@ telegram_bot.on("callback_query", async (msg) => {
             "soundcloud": "https://soundcloud.com/ygolan/zidfok3zzkiu",
             "spotify": "https://open.spotify.com/episode/4KWO5O94odgyT8n48I3XfI?si=SDfi3g5XSWmK2T_PqW6B0Q"
         }, { isSearch: true, contactID: msg.message.chat.id, source: "Telegram" }));
+        if (textAfterEdit == undefined) textAfterEdit = 'אנא המתן...';
     }
     if (msg.data == 'miz119_100-400' || msg.data == 'miz119_all') {
         queue.add(() => sendTheFile({
@@ -1246,6 +1366,14 @@ telegram_bot.on("callback_query", async (msg) => {
             "soundcloud": "https://soundcloud.com/ygolan/fsu9lly3hhqe",
             "spotify": "https://open.spotify.com/episode/3GJpW7ORE50d0zUgEfwySP?si=yZIEKz5SQbOUj3dIaVkw7w"
         }, { isSearch: true, contactID: msg.message.chat.id, source: "Telegram" }));
+        if (textAfterEdit == undefined) textAfterEdit = 'אנא המתן...';
+    }
+
+    if (textAfterEdit != undefined) {
+        telegram_bot.editMessageText(textAfterEdit, {
+            chat_id: msg.message.chat.id,
+            message_id: msg.message.message_id
+        });
     }
 
 })
@@ -1517,44 +1645,6 @@ async function sendMessageWA(GRobj, soundFile, title) {
     return [mediaMsg, txtMsg];
 }
 
-/** old method */
-async function sendToTelegram(episode, title) {
-    let massToForward_Tel = null;
-    let kb = makeKeyboard(episode);
-    let Tel_Promises = [];
-
-    for (let tel of LIST_OF_GROUP.tanach_telegram) {
-        logToFile("@Telegram: start to send " + episode.name + " to " + tel.name);
-
-        if (massToForward_Tel == null) {
-            try {
-                massToForward_Tel = await queue.add(() => telegram_bot.sendAudio(tel.id, episode.path, {
-                    caption: title,
-                    title: title,
-                    reply_markup: {
-                        inline_keyboard: kb
-                    }
-                }), { priority: 2 })
-
-            }
-            catch {
-                logToFile("@Telegram: cant send to telegram " + episode.name)
-                console.error
-            }
-
-            logToFile("@Telegram: The file " + episode.name + " has sended to " + tel.name);
-        }
-        else {
-            Tel_Promises.push(
-                queue.add(() => telegram_bot.forwardMessage(tel.id, massToForward_Tel.chat?.id, massToForward_Tel.message_id), { priority: 1 })
-                    .then(logToFile("@Telegram: The file " + episode.name + " has sended to " + tel.name))
-            );
-        }
-
-    }
-    return Tel_Promises;
-}
-
 /**
  * @param {{name:String,path:String,...}} episode 
  * @param {{name:String,id:String}} chat 
@@ -1769,7 +1859,7 @@ async function initializeGroup(nameToCompare = 'התנ"ך היומי') {
 /**
  * Server run at UTC time (+0:00), The time in israel is +2\3 hour more.
  * this function return the date with hour of israel
- * @param {Date} date Option, alse use the current time.
+ * @param {Date} date Option, else use the current time.
  * @returns {Date} (hour of israel, the day can be wrong)
  */
 function getIsraelTime(date = new Date()) {
@@ -1801,6 +1891,25 @@ function checkIsYomTov(hebdate) {
     // Sivan
     if (M === 3) {
         if (D === 6)
+            return true;
+    }
+    return false;
+}
+
+/**
+ * Check if is 9 Av today (forbidden to learn Tora)
+ * @param {Hebcal} hebdate 
+ */
+function checkIs9Av(hebdate) {
+    let M = hebdate.month;
+    let D = hebdate.day;
+    let D_inWeek = hebdate.getDay();
+
+    // Av
+    if (M === 5) {
+        if (D === 9 && D_inWeek !== 6)
+            return true;
+        if (D === 10 && D_inWeek === 0)
             return true;
     }
     return false;
@@ -1843,8 +1952,12 @@ function sendTodayTanachYomiChapter() {
     const is_Holi_Today = dayInWeek === 6 || checkIsYomTov(HebDate);
     const is_Holi_tomorow = dayInWeek_tomorow === 6 || checkIsYomTov(HebDate_tomorow);
 
-    //console.log(date)
-    logToFile(date + ", ms: " + serverTime.getMilliseconds())
+    logToFile(date + ", ms: " + serverTime.getMilliseconds());
+
+    // check tomorrow, today is like greg date 
+    if (checkIs9Av(HebDate_tomorow)) {
+        return;
+    }
 
     if (is_Holi_Today && is_Holi_tomorow) {
         return; // do nothing
@@ -2256,4 +2369,28 @@ function miz119_isFound(contactID, contactName, serachSource = "") {
         });
     }
 
+}
+
+async function addtogroup(contact) {
+    let result = { ok: false, nameGroup: "fail" }
+    for (let indexGroup = 2; indexGroup < LIST_OF_GROUP.tanach_whatsapp.length; indexGroup++) {
+        try {
+            let chat = await whatsapp_bot.getChatById(LIST_OF_GROUP.tanach_whatsapp[indexGroup]?.id);
+            //console.log(chat)
+
+            if (!chat.isGroup) continue;
+            if (chat.participants?.length > 255) continue;
+
+            let respond = await chat.addParticipants([contact]);
+            console.log(respond);
+
+            if (respond[contact] === 200) {
+                return { ok: true, nameGroup: chat.name };
+            }
+        } catch (e) {
+            console.error(e);
+        }
+
+    }
+    return result
 }
